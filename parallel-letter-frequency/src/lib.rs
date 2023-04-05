@@ -1,41 +1,35 @@
-use std::hash::Hash;
-use std::sync::mpsc;
-
-use std::sync::Arc;
-use std::thread;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+use std::thread;
 
-pub fn frequency(input:  &'a [&str], worker_count: usize) -> HashMap<char, usize> {
-    if worker_count == 0 {
-        panic!();
-    }
-    let (tx, rx) = mpsc::channel();
+pub fn frequency(input: &[&str], worker_count: usize) -> HashMap<char, usize> {
+    let count_map = Arc::new(Mutex::new(HashMap::new()));
+    let input_vec = Arc::new(input.iter().map(|s| s.to_string()).collect::<Vec<_>>());
 
-    // do work
+    let chunk_size = input_vec.len() / worker_count + 1;
+    let chunks = input_vec.chunks(chunk_size).map(|chunk| chunk.to_vec());
+
     let mut handles = vec![];
-    let per = input.len() / worker_count;
-    for i in 0..worker_count { 
-
-        let tx = tx.clone();
-        let work = & input[(i * per)..((i + 1) * per)];
-        
+    for chunk in chunks {
+        let count_map = count_map.clone();
         let handle = thread::spawn(move || {
-            for w in work.iter().cloned() { 
-          
-            }    
+            for s in chunk {
+                for c in s.chars() {
+                    if c.is_numeric() || c.is_ascii_punctuation() {
+                        continue;
+                    }
+                    let c = c.to_lowercase().next().unwrap_or(c);
+                    let mut map = count_map.lock().unwrap();
+                    *map.entry(c).or_insert(0) += 1;
+                }
+            }
         });
-
         handles.push(handle);
     }
 
-
-    // create hashmap from recieved 
-    let mut ret = HashMap::new();
-    for received in rx { 
-        *ret.entry(received).or_insert(0) += 1;
+    for handle in handles {
+        handle.join().unwrap();
     }
 
-    // wait til finished
-    handles.into_iter().for_each(|h| h.join().unwrap());
-    ret
+    Arc::try_unwrap(count_map).unwrap().into_inner().unwrap()
 }
